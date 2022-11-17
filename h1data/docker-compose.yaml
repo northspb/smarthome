@@ -1,0 +1,132 @@
+version: '3.3'
+services:
+  hass:
+    image: homeassistant/home-assistant:stable
+    restart: unless-stopped
+    container_name: haslim
+    privileged: true
+    network_mode: host
+    environment:
+      - TZ=Europe/Moscow
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./hadata:/haconfig
+      - /sys/class/gpio:/sys/class/gpio
+    entrypoint: ["hass","-c","/haconfig"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hass.rule=Host(`d1.ha.info`)"
+      - "traefik.http.routers.hass.entrypoints=websecure"
+      - "traefik.http.services.hass.loadbalancer.server.port=8123"
+      - "traefik.http.routers.hass.service=hass"
+      - "traefik.http.routers.hass.tls.certresolver=leresolver"
+  zigbee2mqtt:
+    container_name: zigbee2mqtt
+    image: koenkk/zigbee2mqtt:latest-dev
+    environment:
+      - TZ=Europe/Moscow
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./z2mdata/data:/app/data
+    devices:
+      - /dev/ttyAML2:/dev/ttyAML2
+    restart: always
+    ports:
+      - 8080:8080
+    networks:
+      - backend
+    labels:
+      - "traefik.enable=false"
+  node-red:
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Moscow
+    volumes:
+      - ./nodereddata:/data
+    container_name: nodered
+    image: nodered/node-red:2.2.2-12-minimal
+    ports:
+      - 1880:1880
+    networks:
+      - backend
+    labels:
+      - "traefik.enable=false"
+  mosquitto:
+    container_name: mosquitto
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Moscow
+    networks:
+      - backend
+    ports:
+      - 1883:1883
+      - 9001:9001
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    image: eclipse-mosquitto:2.0.7
+    labels:
+      - "traefik.enable=false"
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:latest
+    command: -H unix:///var/run/docker.sock
+    restart: always
+    environment:
+      - TZ=Europe/Moscow
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./portainer/data:/data
+    ports:
+      - 9000:9000
+      - 8000:8000
+    networks:
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.ha.info`)"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      - "traefik.http.routers.portainer.service=portainer"
+      - "traefik.http.routers.portainer.tls.certresolver=leresolver"
+#  traefik:
+#    container_name: traefik
+#    image: traefik:latest
+#    restart: unless-stopped
+#    command:
+#      - --entrypoints.web.address=:80
+#      - --entrypoints.websecure.address=:443
+#      - --providers.docker
+#      - --api
+#      - --api.dashboard=true
+#      - --api.insecure
+#      - --log.level=ERROR
+#      - --pilot.token=3c600767-257a-4151-b7eb-9f5f838f2879
+#      - --certificatesresolvers.leresolver.acme.httpchallenge=true
+#      - --certificatesresolvers.leresolver.acme.email=vladimir@shuklin.info #Set your email address here, is for the generation of SSL certificates with Let's Encrypt.
+#      - --certificatesresolvers.leresolver.acme.storage=/acme.json
+#      - --certificatesresolvers.leresolver.acme.httpchallenge.entrypoint=web
+#    ports:
+#      - "80:80"
+#      - "443:443"
+#      - "8081:8080"
+#    networks:
+#      - backend
+#    volumes:
+#      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+#      - "./traefik/acme.json:/acme.json"
+#    labels:
+#      - "traefik.http.routers.http-catchall.rule=hostregexp(`{host:.+}`)"
+#      - "traefik.http.routers.http-catchall.entrypoints=web"
+#      - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
+#      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+#    extra_hosts:
+#      - "host.docker.internal:172.19.0.1"
+
+networks:
+  backend:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 172.19.0.0/16
+         gateway: 172.19.0.1
